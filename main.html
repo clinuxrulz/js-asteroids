@@ -2,9 +2,11 @@
 	<head>
 		<script src='wire.js'></script>
 		<script src='sound.js'></script>
+		<script src='util.js'></script>
 		<script>
 
 var constants = {
+	enableSound: true,
 	turnLeft: 37,   // left arrow
 	turnRight: 39,  // right arrow
 	accelerate: 38, // up arrow
@@ -14,7 +16,33 @@ var constants = {
 	fireRate: 5,       // bullets per second
 	bulletSize: 5,
 	bulletSpeed: 500.0,
-	bulletLifespan: 5   // seconds
+	bulletLifespan: 5,   // seconds
+	asteroids: [
+		// smallest
+		{
+			speed: { min: 40, max: 50 },
+			numVertices: { min: 3, max: 5 },
+			radius: { min: 10, max: 25 }
+		},
+		// larger
+		{
+			speed: { min: 30, max: 40 },
+			numVertices: { min: 5, max: 8 },
+			radius: { min: 30, max: 40 }
+		},
+		// larger
+		{
+			speed: { min: 20, max: 30 },
+			numVertices: { min: 10, max: 12},
+			radius: { min: 60, max: 70 }
+		},
+		// largest
+		{
+			speed: { min: 10, max: 20 },
+			numVertices: { min: 18, max: 25 },
+			radius: { min: 60, max: 100 }
+		}
+	]
 };
 
 var commandWires;
@@ -181,11 +209,6 @@ var bulletPositionWire = function(initPos, dir) {
 	);
 };
 
-var spawnAsteroidIO = function() {
-	var asteroid = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-
-};
-
 var bulletCommandWire = function(bullet, initPos, dir) {
 	return wire(io).next(
 		wire(io).o(
@@ -215,6 +238,47 @@ var bulletCommandWire = function(bullet, initPos, dir) {
 			]);
 		}
 	);
+};
+
+var spawnAsteroidIO = function(size) {
+	return function() {
+		var asteroid = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+		var asteroidConsts = constants.asteroids[size];
+		var numVertices = randomInt(asteroidConsts.numVertices.min, asteroidConsts.numVertices.max+1);
+		var vertex;
+		var radius;
+		var i;
+		var angle;
+		var verticesStr = "";
+		var screenWidth = innerWidth;
+		var screenHeight = innerHeight;
+		for (i = 0; i < numVertices; ++i) {
+			angle = i * 2.0 * Math.PI / numVertices;
+			radius = randomFloat(asteroidConsts.radius.min, asteroidConsts.radius.max);
+			vertex = [
+				Math.cos(angle) * radius,
+				Math.sin(angle) * radius
+			];
+			if (i != 0) {
+				verticesStr += " ";
+			}
+			verticesStr += vertex[0] + "," + vertex[1];
+		}
+		asteroid.setAttribute("fill", "none");
+		asteroid.setAttribute("stroke", "white");
+		asteroid.setAttribute("points", verticesStr);
+		var initPos = [
+			randomInt(0, screenWidth),
+			randomInt(0, screenHeight)
+		];
+		asteroid.transform.baseVal
+			.appendItem(svg.createSVGTransform())
+			.setTranslate(initPos[0], initPos[1]);
+		asteroid.transform.baseVal
+			.appendItem(svg.createSVGTransform())
+			.setRotate(0, 0, 0);
+		svg.appendChild(asteroid);
+	};
 };
 
 var shipAngleCommandWire = wire(io).map(
@@ -289,7 +353,9 @@ var fireInput = function(input) {
 						svgShipPosition.transform.baseVal.getItem(0).setTranslate(a.value[0], a.value[1]);
 					} else if (a.type == 'fire') {
 						spawnBulletIO(shipPosition, shipDirection)();
-						play(audioCtx, pewBuffer)();
+						if (constants.enableSound) {
+							play(audioCtx, pewBuffer)();
+						}
 						fireInput(a);
 					} else if (a.type == "sideEffect") {
 						a.value();
@@ -305,10 +371,14 @@ var init = function() {
 	svgShipAngle = document.getElementById("svgShipAngle");
 	svgShipPosition = document.getElementById("svgShipPosition");
 
-	explosionBuffer = render(audioCtx, explosion(wire(io), io))();
-	ufoBuffer = render(audioCtx, ufo(wire(io), io))();
-	deathBuffer = render(audioCtx, death(wire(io), io))();
-	pewBuffer = render(audioCtx, pew(wire(io), io))();
+	if (constants.enableSound) {
+		explosionBuffer = render(audioCtx, explosion(wire(io), io))();
+		ufoBuffer = render(audioCtx, ufo(wire(io), io))();
+		deathBuffer = render(audioCtx, death(wire(io), io))();
+		pewBuffer = render(audioCtx, pew(wire(io), io))();
+	}
+
+	spawnAsteroidIO(3)();
 
 	var lastMs = new Date().getTime();
 	setInterval(
@@ -324,14 +394,16 @@ var init = function() {
 
 document.onkeydown = function(e) {
 	fireInput({type:"keyDown", keyCode: e.keyCode});
-	if (e.keyCode == 49) {
-		play(audioCtx, explosionBuffer)();
-	} else if (e.keyCode == 50) {
-		play(audioCtx, ufoBuffer)();
-	} else if (e.keyCode == 51) {
-		play(audioCtx, deathBuffer)();
-	} else if (e.keyCode == 52) {
-		play(audioCtx, pewBuffer)();
+	if (constants.enableSound) {
+		if (e.keyCode == 49) {
+			play(audioCtx, explosionBuffer)();
+		} else if (e.keyCode == 50) {
+			play(audioCtx, ufoBuffer)();
+		} else if (e.keyCode == 51) {
+			play(audioCtx, deathBuffer)();
+		} else if (e.keyCode == 52) {
+			play(audioCtx, pewBuffer)();
+		}
 	}
 };
 
