@@ -38,7 +38,7 @@ var constants = {
 		},
 		// largest
 		{
-			speed: { min: 10, max: 20 },
+			speed: { min: 15, max: 25 },
 			numVertices: { min: 18, max: 25 },
 			radius: { min: 60, max: 100 }
 		}
@@ -256,8 +256,8 @@ var spawnAsteroidIO = function(size) {
 			angle = i * 2.0 * Math.PI / numVertices;
 			radius = randomFloat(asteroidConsts.radius.min, asteroidConsts.radius.max);
 			vertex = [
-				Math.cos(angle) * radius,
-				Math.sin(angle) * radius
+				radius * Math.cos(angle),
+				radius * Math.sin(angle)
 			];
 			if (i != 0) {
 				verticesStr += " ";
@@ -278,7 +278,114 @@ var spawnAsteroidIO = function(size) {
 			.appendItem(svg.createSVGTransform())
 			.setRotate(0, 0, 0);
 		svg.appendChild(asteroid);
+		angle = randomFloat(0, 2.0 * Math.PI);
+		var speed = randomFloat(asteroidConsts.speed.min, asteroidConsts.speed.max);
+		var velocity = [
+			speed * Math.cos(angle),
+			speed * Math.sin(angle)
+		];
+		commandWires.push(asteroidCommandWire(asteroid, initPos, velocity));
+		return asteroid;
 	};
+};
+
+var screenSizeWire = function(dt, x) {
+	var screenSizeWire2 = function(lastSize) {
+		var unchangedChangedHandler = function(a) {
+			return io.map(
+				function(size) {
+					if (size[0] == lastSize[0] && size[1] == lastSize[1]) {
+						return [wvUnchanged(size), screenSizeWire2(size)];
+					} else {
+						return [wvChanged(size), screenSizeWire2(size)];
+					}
+				},
+				function() {
+					return [innerWidth, innerHeight];
+				}
+			);
+		};
+		return function(dt, x) {
+			return x({
+				wvInhibited: function() {
+					return io.pure([wvInhibited, screenSizeWire2(lastSize)]);
+				},
+				wvUnchanged: unchangedChangedHandler,
+				wvChanged: unchangedChangedHandler
+			});
+		};
+	};
+	var unchangedChangedHandler = function(a) {
+		return io.map(
+			function(size) {
+				return [wvChanged(size), screenSizeWire2(size)];
+			},
+			function() {
+				return [innerWidth, innerHeight];
+			}
+		);
+	};
+	return x({
+		wvInhibited: function() {
+			return io.pure([wvInhibited, screenSizeWire]);
+		},
+		wvUnchanged: unchangedChangedHandler,
+		wvChanged: unchangedChangedHandler
+	});
+};
+
+var screenWidthWire = wire(io).o(
+	wire(io).arr(function(x) { return x[0]; }),
+	screenSizeWire
+);
+
+var screenHeightWire = wire(io).o(
+	wire(io).arr(function(x) { return x[1]; }),
+	screenSizeWire
+);
+
+var asteroidPositionWire = function(initPos, vel) {
+	return wire(io).o(
+		wire(io).split(
+			wire(io).o(
+				wire(io).integralWith(
+					curry(function(width, posX) {
+						if (posX < 0) { return posX + width; }
+						if (posX >= width) { return posX - width; }
+						return posX;
+					}),
+					initPos[0]
+				),
+				wire(io).fanout(wire(io).id, screenWidthWire)
+			),
+			wire(io).o(
+				wire(io).integralWith(
+					curry(function(height, posY) {
+						if (posY < 0) { return posY + height; }
+						if (posY >= height) { return posY - height; }
+						return posY;
+					}),
+					initPos[1]
+				),
+				wire(io).fanout(wire(io).id, screenHeightWire)
+			)
+		),
+		wire(io).pure(vel)
+	);
+};
+
+var asteroidCommandWire = function(asteroid, initPos, vel) {
+	return wire(io).o(
+		wire(io).arr(function(asteroidPos) {
+			return {
+				type:'sideEffect',
+				value: function() {
+					asteroid.transform.baseVal.getItem(0).setTranslate(asteroidPos[0], asteroidPos[1]);
+				}
+			};
+		}),
+		asteroidPositionWire(initPos, vel)
+	);
 };
 
 var shipAngleCommandWire = wire(io).map(
@@ -378,7 +485,9 @@ var init = function() {
 		pewBuffer = render(audioCtx, pew(wire(io), io))();
 	}
 
-	spawnAsteroidIO(3)();
+	for (var i = 0; i < 5; ++i) {
+		spawnAsteroidIO(3)();
+	}
 
 	var lastMs = new Date().getTime();
 	setInterval(
