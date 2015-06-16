@@ -238,6 +238,37 @@ var array = (function() {
 	}));
 })();
 
+var lazy = (function() {
+	return monad(applicative(bind(apply(functor({
+		// map :: (a -> b) -> Lazy a -> Lazy b
+		map: function(f, ma) {
+			return function() {
+				return f(ma());
+			};
+		},
+		// ap :: Lazy (a -> b) -> Lazy a -> Lazy b
+		ap: function(mf, ma) {
+			return function() {
+				var f = mf();
+				var a = ma();
+				return f(a);
+			};
+		},
+		// bind :: Lazy a -> (a -> Lazy b) -> Lazy b
+		bind: function(ma, f) {
+			return function() {
+				return f(ma())();
+			};
+		},
+		// pure: a -> Lazy a
+		pure: function(a) {
+			return function() {
+				return a;
+			};
+		}
+	})))));
+})();
+
 var io = (function() {
 	return monad(applicative(bind(apply(functor({
 		// map :: (a -> b) -> IO a -> IO b
@@ -263,6 +294,14 @@ var io = (function() {
 		pure: function(a) {
 			return function() {
 				return a;
+			};
+		},
+		// mfix :: (Lazy a -> IO a) -> IO a
+		mfix: function(f) {
+			return function() {
+				return f(function() {
+					return io.mfix(f)();
+				})();
 			};
 		},
 		// instance Semigroup a => Semigroup (IO a)
@@ -303,7 +342,7 @@ var id = (function() {
 	})))));
 })();
 
-var wv = functor({
+var wv = apply(functor({
 	// map :: (a -> b) -> WValue a -> WValue b
 	map: function(f, x) {
 		return x({
@@ -317,13 +356,63 @@ var wv = functor({
 				return wvChanged(f(a));
 			}
 		});
+	},
+	// ap :: WValue (a -> b) -> WValue a -> WValue b
+	ap: function(mf, ma) {
+		return mf({
+			wvInhibited: function() {
+				return wvInhibited;
+			},
+			wvUnchanged: function(f) {
+				return ma({
+					wvInhibited: function() {
+						return wvInhibited;
+					},
+					wvUnchanged: function(a) {
+						return wvUnchanged(f(a));
+					},
+					wvChanged: function(a) {
+						return wvChanged(f(a));
+					}
+				});
+			},
+			wvChanged: function(f) {
+				return ma({
+					wvInhibited: function() {
+						return wvInhibited;
+					},
+					wvUnchanged: function(a) {
+						return wvChanged(f(a));
+					},
+					wvChanged: function(a) {
+						return wvChanged(f(a));
+					}
+				});
+			}
+		});
 	}
-});
+}));
 
 // data Wire m a b = Wire (WValue a -> m (WValue b, Wire m a b))
 // data WValue a = WVInhibited | WVUnchanged a | WVChanged a
 var wire = function(m) {
 	var wire_m = applicative(apply(functor(arrow(category(semigroupoid({
+		// mkGen :: (Double -> a -> m (WValue b, Wire m a b)) -> Wire m a b
+		mkGen: function(x) {
+			return function(dt, x2) {
+				return x2({
+					wvInhibited: function() {
+						return m.pure([wvInhibited, wire_m.mkGen(x)]);
+					},
+					wvUnchanged: function(a) {
+						return x(dt, a);
+					},
+					wvChanged: function(a) {
+						return x(dt, a);
+					}
+				});
+			};
+		},
 		// map :: (a -> b) -> Wire m r a -> Wire m r b
 		map: function(f, w) {
 			return wire_m.o(wire_m.arr(f), w);
@@ -617,6 +706,79 @@ var wire = function(m) {
 					wvUnchanged: unchangedOrChangedHandler,
 					wvChanged: unchangedOrChangedHandler
 				}));
+			};
+		},
+		// delay :: a -> Wire m a a
+		delay: function(x) {
+			var delayUnchanged = function(x) {
+				return function(dt, x2) {
+					return m.pure(x2({
+						wvInhibited: function() {
+							return [wvInhibited, delayUnchanged(x)];
+						},
+						wvUnchanged: function(a) {
+							return [wvUnchanged(x), delayUnchanged(a)];
+						},
+						wvChanged: function(a) {
+							return [wvUnchanged(x), wire_m.delay(a)];
+						}
+					}));
+				};
+			};
+			return function(dt, x2) {
+				return m.pure(x2({
+					wvInhibited: function() {
+						return [wvInhibited, wire_m.delay(x)];
+					},
+					wvUnchanged: function(a) {
+						return [wvChanged(x), delayUnchanged(a)];
+					},
+					wvChanged: function(a) {
+						return [wvChanged(x), wire_m.delay(a)];
+					}
+				}));
+			};
+		},
+		// loop :: Wire m (a,Lazy c) (b,Lazy c) -> Wire m a b
+		loop: function(w) {
+			return function(dt, x) {
+				return m.map(
+					function(x2) {
+						return [
+							wv.map(
+								function(x3) { return x3[0]; },
+								x2[0]
+							),
+							wire_m.loop(x2[1])
+						];
+					},
+					// mfix :: (Lazy a -> m a) -> m a
+					m.mfix(function(x2) {
+						var lazyC = lazy.bind(
+							x2,
+							function(x3) {
+								return x3[0]({
+									wvInhibited: function() {
+										throw "Inhibited in loop!";
+									},
+									wvUnchanged: function(a) {
+										return a[1];
+									},
+									wvChanged: function(a) {
+										return a[1];
+									}
+								});
+							}
+						);
+						return w(
+							dt,
+							wv.map(
+								function(x3) { return [x3,lazyC]; },
+								x
+							)
+						);
+					})
+				);
 			};
 		}
 	}))))));
