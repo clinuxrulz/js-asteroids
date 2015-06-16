@@ -216,7 +216,7 @@ var arrow = function(def) {
 	var first = r.first;
 	var swap = r.arr(function(x) { return [x[1],x[0]]; });
 	var dup = r.arr(function(x) { return [x,x]; });
-	r.second = function(x) { return r.o(r.swap, r.o(first(x), r.swap)); };
+	r.second = function(x) { return r.o(swap, r.o(first(x), swap)); };
 	if (!r.hasOwnProperty('split')) {
 		r.split = function(x1, x2) { return r.o(r.second(x2), r.first(x1)); };
 	}
