@@ -5,12 +5,18 @@
 		<script src='util.js'></script>
 		<script src='main.js'></script>
 		<script>
-		var testLoop = wire(io).loop(
-			wire(io).arr(function(x) {
-				return [x[0], x[1]];
-			})
+		var testLoopAccumulate = wire(io).o(
+			wire(io).arr(function(x) { return x(); }),
+			wire(io).loop(
+				wire(io).o(
+					wire(io).split(wire(io).id, wire(io).delay(lazy.pure(0))),
+					wire(io).arr(function(x) {
+						var r = lazy.map(function(x2) { return x2 + x[0]; }, x[1]);
+						return [r, r];
+					})
+				)
+			)
 		);
-		testLoop(0, wvChanged(1))();
 		</script>
 	</head>
 	<body style="margin:0px" onload="init()" bgcolor="#000000" fgcolor="#FFFFFF">
