@@ -298,11 +298,9 @@ var io = (function() {
 		},
 		// mfix :: (Lazy a -> IO a) -> IO a
 		mfix: function(f) {
-			return function() {
-				return f(function() {
-					return io.mfix(f)();
-				})();
-			};
+			return f(function() {
+				return io.mfix(f)();
+			});
 		},
 		// instance Semigroup a => Semigroup (IO a)
 		semigroup: function(m) {
@@ -388,6 +386,20 @@ var wv = apply(functor({
 						return wvChanged(f(a));
 					}
 				});
+			}
+		});
+	},
+	// markChanged :: WValue a -> WValue a
+	markChanged: function(x) {
+		return x({
+			wvInhibited: function() {
+				return wvInhibited;
+			},
+			wvUnchanged: function(a) {
+				return wvChanged(a);
+			},
+			wvChanged: function(a) {
+				return wvChanged(a);
 			}
 		});
 	}
@@ -778,6 +790,40 @@ var wire = function(m) {
 							)
 						);
 					})
+				);
+			};
+		},
+		// loopDelay :: c -> Wire m (a,c) (b,c) -> Wire m a b
+		loopDelay: function(init, w) {
+			return function(dt, x) {
+				return m.map(
+					function(x2) {
+						var nextInit = x2[0]({
+							wvInhibited: function() {
+								return init;
+							},
+							wvUnchanged: function(a) {
+								return a[1];
+							},
+							wvChanged: function(a) {
+								return a[1];
+							}
+						});
+						return [
+							wv.markChanged(wv.map(
+								function(x3) { return x3[0]; },
+								x2[0]
+							)),
+							wire_m.loopDelay(nextInit, x2[1])
+						];
+					},
+					w(
+						dt,
+						wv.markChanged(wv.map(
+							function(x2) { return [x2,init]; },
+							x
+						))
+					)
 				);
 			};
 		}

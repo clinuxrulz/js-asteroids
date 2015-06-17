@@ -225,31 +225,36 @@ var shipPositionWire = wire(io).o(
 	shipVelocityWire
 );
 
-var shipHasFiredWire = wire(io).arr(function(input) {
-	return input.type == "fire";
-});
-
-var shipFireWire = wire(io).apply2(
-	curry(function(fire, timeSinceFired) {
-		return fire && (timeSinceFired >= 1.0 / constants.fireRate);
-	}),
-	keyDownWire(io, constants.fire),
-	wire(io).o(
-		wire(io).integralWith(
-			curry(function(shipHasFired, timeSinceFired) {
-				if (shipHasFired) {
-					return 0.0;
-				} else {
-					return timeSinceFired;
-				}
+var shipFireWire = wire(io).o(
+	wire(io).loopDelay(
+		false,
+		wire(io).o(
+			wire(io).arr(function(x) {
+				var fireKeyDown = x[0];
+				var timeSinceFired = x[1];
+				var r = fireKeyDown && (timeSinceFired >= 1.0 / constants.fireRate);
+				return [r, r];
 			}),
-			0
-		),
-		wire(io).fanout(
-			wire(io).pure(1),
-			shipHasFiredWire
+			wire(io).second(
+				wire(io).o(
+					wire(io).integralWith(
+						curry(function(shipDidFire, timeSinceFired) {
+							if (shipDidFire) {
+								return 0.0;
+							} else {
+								return timeSinceFired;
+							}
+						}),
+						0
+					),
+					wire(io).arr(function(x) {
+						return [1.0, x];
+					})
+				)
+			)
 		)
-	)
+	),
+	keyDownWire(io, constants.fire)
 );
 
 var spawnBulletIO = function(pos, dir) {
@@ -532,7 +537,7 @@ var fireInput = function(input) {
 						if (constants.enableSound) {
 							play(audioCtx, pewBuffer)();
 						}
-						fireInput(a);
+						//fireInput(a);
 					} else if (a.type == "sideEffect") {
 						a.value();
 					}
